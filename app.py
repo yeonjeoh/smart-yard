@@ -135,8 +135,8 @@ with tab3:
             from dotenv import load_dotenv
             import anthropic
 
-            load_dotenv()
-            client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+            api_key = st.secrets.get("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+            client = anthropic.Anthropic(api_key=api_key)
 
             message = client.messages.create(
                 model="claude-sonnet-4-5",
