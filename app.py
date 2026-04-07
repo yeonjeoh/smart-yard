@@ -1,5 +1,8 @@
 import streamlit as st
 import pandas as pd
+import matplotlib
+import matplotlib.pyplot as plt
+matplotlib.rcParams['font.family'] = 'Malgun Gothic'
 
 # ── 페이지 설정 ───────────────────────────────────────────
 st.set_page_config(
@@ -83,8 +86,13 @@ with col3:
 st.markdown("---")
 
 # ── 탭 3개 ───────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["📊 공정 현황 (EVM)", "📦 재고 현황 (ROP)", "🤖 AI 브리핑"])
-
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📊 공정 현황 (EVM)",
+    "📦 재고 현황 (ROP)",
+    "🤖 AI 브리핑",
+    "⚙️ RAM 분석",
+    "🎲 Monte Carlo"
+])
 with tab1:
     st.subheader("공정 현황 — EVM 분석")
 
@@ -154,3 +162,143 @@ with tab3:
             )
 
         st.markdown(message.content[0].text)
+with tab4:
+    st.subheader("⚙️ RAM 분석 — 장비 가용도 계산")
+
+    st.markdown("#### 장비 정보 입력")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # 사용자가 직접 MTBF 입력
+        mtbf_input = st.number_input(
+            "MTBF (평균 고장 간격, 시간)",
+            min_value=100,
+            max_value=50000,
+            value=4380,
+            step=100,
+            help="과거 데이터 기반 평균 고장 간격을 입력하세요"
+        )
+        st.caption(f"= 약 {mtbf_input/24:.0f}일 = 약 {mtbf_input/24/30:.1f}개월")
+
+    with col2:
+        # 사용자가 직접 MTTR 입력
+        mttr_input = st.number_input(
+            "MTTR (평균 수리 시간, 시간)",
+            min_value=1,
+            max_value=1000,
+            value=44,
+            step=1,
+            help="과거 데이터 기반 평균 수리 시간을 입력하세요"
+        )
+        st.caption(f"= 약 {mttr_input/24:.1f}일")
+
+    # 가용도 계산
+    availability = mtbf_input / (mtbf_input + mttr_input)
+
+    st.markdown("---")
+    st.markdown("#### 계산 결과")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            label="가용도 (A)",
+            value=f"{availability*100:.2f}%",
+            delta="목표 99% 대비 " + f"{(availability-0.99)*100:+.2f}%p"
+        )
+    with col2:
+        st.metric(
+            label="연간 가동 시간",
+            value=f"{availability*8760:.0f}시간",
+            delta=f"연간 {(1-availability)*8760:.0f}시간 정비"
+        )
+    with col3:
+        # 가용도 목표 달성 여부
+        if availability >= 0.99:
+            st.success("✅ 목표 가용도 달성 (99% 이상)")
+        elif availability >= 0.95:
+            st.warning("⚠️ 주의 (95~99%)")
+        else:
+            st.error("🚨 위험 (95% 미만)")
+
+    # RAM 개선 시나리오
+    st.markdown("---")
+    st.markdown("#### MTTR 단축 시나리오")
+    st.caption("MTTR을 줄이면 가용도가 어떻게 개선되는지 확인합니다")
+
+    import pandas as pd
+    scenarios = []
+    for mttr_scenario in [mttr_input, mttr_input*0.8, mttr_input*0.6, mttr_input*0.4]:
+        a = mtbf_input / (mtbf_input + mttr_scenario)
+        scenarios.append({
+            "MTTR (시간)": f"{mttr_scenario:.0f}",
+            "가용도": f"{a*100:.2f}%",
+            "목표 달성": "✅" if a >= 0.99 else "❌"
+        })
+
+    st.dataframe(pd.DataFrame(scenarios), use_container_width=True)
+
+
+with tab5:
+    st.subheader("🎲 Monte Carlo 시뮬레이션 — 가용도 리스크 분석")
+
+    st.markdown("#### 불확실성 범위 설정")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**MTBF 범위 (시간)**")
+        mtbf_min = st.number_input("MTBF 최솟값", value=3000, step=100)
+        mtbf_mode = st.number_input("MTBF 최빈값", value=4380, step=100)
+        mtbf_max = st.number_input("MTBF 최댓값", value=6000, step=100)
+
+    with col2:
+        st.markdown("**MTTR 범위 (시간)**")
+        mttr_min = st.number_input("MTTR 최솟값", value=30, step=1)
+        mttr_mode = st.number_input("MTTR 최빈값", value=44, step=1)
+        mttr_max = st.number_input("MTTR 최댓값", value=80, step=1)
+
+    if st.button("🚀 시뮬레이션 실행", type="primary"):
+        import numpy as np
+
+        N = 10000
+        np.random.seed(42)
+
+        # 삼각분포로 MTBF/MTTR 생성
+        MTBF_sim = np.random.triangular(mtbf_min, mtbf_mode, mtbf_max, N)
+        MTTR_sim = np.random.triangular(mttr_min, mttr_mode, mttr_max, N)
+        A_sim = MTBF_sim / (MTBF_sim + MTTR_sim)
+
+        # 결과 지표
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("평균 가용도", f"{np.mean(A_sim)*100:.2f}%")
+        with col2:
+            st.metric("99% 달성 확률", f"{np.mean(A_sim >= 0.99)*100:.1f}%")
+        with col3:
+            st.metric("하위 5% 가용도", f"{np.percentile(A_sim, 5)*100:.2f}%")
+
+        # 히스토그램
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.hist(A_sim * 100, bins=50, color='mediumseagreen',
+                edgecolor='white', alpha=0.8)
+        ax.axvline(99, color='red', linestyle='--',
+                   linewidth=2, label='목표 가용도 99%')
+        ax.axvline(np.mean(A_sim) * 100, color='orange', linestyle='--',
+                   linewidth=2, label=f'평균: {np.mean(A_sim)*100:.2f}%')
+        ax.set_title('가용도(A) 분포 — Monte Carlo 시뮬레이션')
+        ax.set_xlabel('가용도 (%)')
+        ax.set_ylabel('빈도')
+        ax.legend()
+        plt.tight_layout()
+        st.pyplot(fig)
+
+        # 해석
+        prob_99 = np.mean(A_sim >= 0.99) * 100
+        if prob_99 >= 80:
+            st.success(f"✅ 목표 가용도 99% 달성 확률 {prob_99:.1f}% — 안정적입니다.")
+        elif prob_99 >= 50:
+            st.warning(f"⚠️ 목표 가용도 99% 달성 확률 {prob_99:.1f}% — MTTR 단축이 필요합니다.")
+        else:
+            st.error(f"🚨 목표 가용도 99% 달성 확률 {prob_99:.1f}% — 즉각적인 개선이 필요합니다.")
