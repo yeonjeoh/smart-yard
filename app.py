@@ -542,4 +542,138 @@ with tab7:
 
 with tab8:
     st.subheader("🔮 예측 정비 — 센서 데이터 이상 탐지")
-    st.info("3단계 구현 예정 — 센서 데이터 입력 후 이상 탐지 및 고장 예측")
+    st.caption("진동 센서 데이터를 기반으로 이상 징후를 탐지하고 고장 시점을 예측합니다.")
+
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import matplotlib
+    matplotlib.rcParams['font.family'] = 'Malgun Gothic'
+    from sklearn.ensemble import IsolationForest
+
+    st.markdown("#### 시뮬레이션 설정")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        total_days = st.number_input("데이터 기간 (일)", min_value=30,
+                                      max_value=365, value=120, step=10)
+    with col2:
+        warning_threshold = st.number_input("경보 임계값 (mm/s)",
+                                             min_value=1.0, max_value=10.0,
+                                             value=5.0, step=0.1)
+    with col3:
+        contamination = st.slider("Isolation Forest 이상값 비율",
+                                   min_value=0.01, max_value=0.20,
+                                   value=0.05, step=0.01)
+
+    if st.button("🚀 이상 탐지 실행", type="primary"):
+
+        # 가상 센서 데이터 생성
+        np.random.seed(42)
+        trend = np.linspace(2.0, 3.5, total_days)
+        seasonality = 0.3 * np.sin(2 * np.pi * np.arange(total_days) / 30)
+        noise = np.random.normal(0, 0.1, total_days)
+        vibration = trend + seasonality + noise
+        vibration[-20:] += np.linspace(0, 1.5, 20)
+
+        dates = pd.date_range(start='2026-01-01', periods=total_days, freq='D')
+
+        # 3-시그마 이상 탐지
+        normal_period = vibration[:int(total_days*0.8)]
+        mean_n = np.mean(normal_period)
+        std_n = np.std(normal_period)
+        upper_limit = mean_n + 3 * std_n
+        anomaly_3sigma = vibration > upper_limit
+
+        # 이동 평균 이상 탐지
+        window = 14
+        rolling_mean = pd.Series(vibration).rolling(window=window).mean()
+        rolling_std = pd.Series(vibration).rolling(window=window).std()
+        rolling_upper = rolling_mean + 3 * rolling_std
+        anomaly_rolling = vibration > rolling_upper.values
+
+        # Isolation Forest
+        iso = IsolationForest(contamination=contamination, random_state=42)
+        anomaly_iso = iso.fit_predict(vibration.reshape(-1, 1)) == -1
+
+        # 선형 추세 예측
+        from sklearn.linear_model import LinearRegression
+        recent = 30
+        X_train = np.arange(total_days - recent, total_days).reshape(-1, 1)
+        y_train = vibration[total_days - recent:]
+        model = LinearRegression()
+        model.fit(X_train, y_train)
+        future_x = np.arange(total_days, total_days + 30).reshape(-1, 1)
+        future_pred = model.predict(future_x)
+        future_dates = pd.date_range(
+            start=dates[-1] + pd.Timedelta(days=1), periods=30, freq='D'
+        )
+        exceed_idx = np.where(future_pred >= warning_threshold)[0]
+
+        # KPI 카드
+        st.markdown("---")
+        st.markdown("#### 탐지 결과 요약")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("3-시그마 이상값", f"{anomaly_3sigma.sum()}건")
+        with col2:
+            st.metric("이동평균 이상값", f"{anomaly_rolling.sum()}건")
+        with col3:
+            st.metric("Isolation Forest", f"{anomaly_iso.sum()}건")
+        with col4:
+            if len(exceed_idx) > 0:
+                st.metric("경보 도달 예상", f"{exceed_idx[0]+1}일 후",
+                          delta=future_dates[exceed_idx[0]].strftime('%m/%d'))
+            else:
+                st.metric("경보 도달 예상", "30일 내 없음")
+
+        # 그래프 2개
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+        # 3-시그마 + 이동평균 비교
+        axes[0].plot(dates, vibration, color='steelblue',
+                     linewidth=1.5, alpha=0.8, label='진동값')
+        axes[0].axhline(upper_limit, color='red', linestyle='--',
+                        linewidth=1.5, label=f'3σ 상한선: {upper_limit:.2f}')
+        axes[0].plot(dates, rolling_upper, color='orange',
+                     linewidth=1.5, linestyle='--', label=f'{window}일 이동 상한선')
+        axes[0].scatter(dates[anomaly_3sigma], vibration[anomaly_3sigma],
+                        color='red', s=50, zorder=5,
+                        label=f'3σ 이상값 {anomaly_3sigma.sum()}건')
+        axes[0].set_title('3-시그마 vs 이동평균 이상 탐지')
+        axes[0].set_xlabel('날짜')
+        axes[0].set_ylabel('진동값 (mm/s)')
+        axes[0].legend(fontsize=8)
+        axes[0].grid(alpha=0.3)
+
+        # 추세 예측
+        axes[1].plot(dates[-recent:], y_train, color='steelblue',
+                     linewidth=1.5, label='최근 실측값')
+        axes[1].plot(future_dates, future_pred, color='red',
+                     linewidth=2, linestyle='--', label='향후 30일 예측')
+        axes[1].axhline(warning_threshold, color='darkred', linestyle=':',
+                        linewidth=1.5, label=f'경보 임계값: {warning_threshold}')
+        if len(exceed_idx) > 0:
+            axes[1].axvline(future_dates[exceed_idx[0]], color='red',
+                            linestyle='--', alpha=0.7,
+                            label=f'경보 예상: {future_dates[exceed_idx[0]].strftime("%m/%d")}')
+        axes[1].set_title('선형 추세 예측 (향후 30일)')
+        axes[1].set_xlabel('날짜')
+        axes[1].set_ylabel('진동값 (mm/s)')
+        axes[1].legend(fontsize=8)
+        axes[1].grid(alpha=0.3)
+
+        plt.tight_layout()
+        st.pyplot(fig)
+
+        # 이상값 상세 목록
+        st.markdown("---")
+        st.markdown("#### 3-시그마 이상값 상세")
+        if anomaly_3sigma.sum() > 0:
+            anomaly_df = pd.DataFrame({
+                "날짜": dates[anomaly_3sigma],
+                "진동값 (mm/s)": vibration[anomaly_3sigma].round(3),
+                "상한선 초과량": (vibration[anomaly_3sigma] - upper_limit).round(3)
+            })
+            st.dataframe(anomaly_df, use_container_width=True)
+        else:
+            st.success("이상값 없음")
