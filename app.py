@@ -10,7 +10,7 @@ def set_korean_font():
     font_path = '/tmp/NanumGothic.ttf'
     if not os.path.exists(font_path):
         urllib.request.urlretrieve(
-            'https://github.com/googlefonts/nanum/raw/main/fonts/NanumGothic/NanumGothic-Regular.ttf',
+            'https://cdn.jsdelivr.net/gh/googlefonts/nanum@main/fonts/NanumGothic/NanumGothic-Regular.ttf',
             font_path
         )
     from matplotlib import font_manager
