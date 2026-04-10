@@ -2,7 +2,22 @@ import streamlit as st
 import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
-matplotlib.rcParams['font.family'] = 'Malgun Gothic'
+import urllib.request
+import os
+
+# ── 한글 폰트 설정 (로컬: Malgun Gothic / 클라우드: NanumGothic) ──
+def set_korean_font():
+    font_path = '/tmp/NanumGothic.ttf'
+    if not os.path.exists(font_path):
+        urllib.request.urlretrieve(
+            'https://github.com/googlefonts/nanum/raw/main/fonts/NanumGothic/NanumGothic-Regular.ttf',
+            font_path
+        )
+    from matplotlib import font_manager
+    font_manager.fontManager.addfont(font_path)
+    matplotlib.rcParams['font.family'] = 'NanumGothic'
+
+set_korean_font()
 
 # ── 페이지 설정 ───────────────────────────────────────────
 st.set_page_config(
@@ -369,10 +384,6 @@ with tab6:
         )
 
     # 신뢰도 곡선 그래프
-    import matplotlib.pyplot as plt
-    import matplotlib
-    matplotlib.rcParams['font.family'] = 'Malgun Gothic'
-
     t_range = np.linspace(1, eta_input * 2, 1000)
     R = np.exp(-(t_range/eta_input)**beta_input)
 
@@ -546,9 +557,6 @@ with tab8:
 
     import numpy as np
     import pandas as pd
-    import matplotlib.pyplot as plt
-    import matplotlib
-    matplotlib.rcParams['font.family'] = 'Malgun Gothic'
     from sklearn.ensemble import IsolationForest
 
     st.markdown("#### 시뮬레이션 설정")
