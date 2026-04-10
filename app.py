@@ -410,7 +410,134 @@ with tab6:
 
 with tab7:
     st.subheader("👥 인력 최적화 — 함정별 최적 인력 배분")
-    st.info("3단계 구현 예정 — 함정 정보 입력 후 최적 배분 자동 계산")
+    st.caption("함정별 우선순위와 부서별 가용 인력을 입력하면 최적 배분을 자동 계산합니다.")
+
+    import pulp
+
+    st.markdown("#### 부서별 가용 인력 설정")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        engine_crew = st.number_input("기관부 가용 인력 (명)", min_value=1, max_value=50, value=8)
+    with col2:
+        electric_crew = st.number_input("전자부 가용 인력 (명)", min_value=1, max_value=50, value=6)
+    with col3:
+        weapon_crew = st.number_input("무장부 가용 인력 (명)", min_value=1, max_value=50, value=4)
+
+    st.markdown("---")
+    st.markdown("#### 함정별 정보 입력")
+    st.caption("담당 부서, 작전 우선순위(1~10), 일일 진도율, 최소 투입 인원을 입력하세요.")
+
+    # 함정 데이터 입력 테이블
+    dept_options = ["기관부", "전자부", "무장부"]
+
+    ships = []
+    for i in range(1, 6):
+        col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
+        with col1:
+            name = st.text_input(f"함정{i} 이름", value=f"함정{i}", key=f"name_{i}")
+        with col2:
+            dept = st.selectbox(f"담당부서", dept_options, key=f"dept_{i}")
+        with col3:
+            priority = st.number_input(f"우선순위", min_value=1, max_value=10,
+                                       value=6-i, key=f"priority_{i}")
+        with col4:
+            rate = st.number_input(f"진도율(%)", min_value=1, max_value=20,
+                                   value=5, key=f"rate_{i}")
+        with col5:
+            min_crew = st.number_input(f"최소인원", min_value=1, max_value=10,
+                                       value=2, key=f"min_{i}")
+        ships.append({
+            "name": name, "dept": dept,
+            "priority": priority, "rate": rate, "min_crew": min_crew
+        })
+
+    if st.button("🚀 최적 배분 계산", type="primary"):
+
+        # 부서별 함정 분류
+        engine_ships = [s for s in ships if s["dept"] == "기관부"]
+        electric_ships = [s for s in ships if s["dept"] == "전자부"]
+        weapon_ships = [s for s in ships if s["dept"] == "무장부"]
+
+        # ILP 문제 정의
+        prob = pulp.LpProblem("인력배분최적화", pulp.LpMinimize)
+
+        # 결정변수 생성
+        vars_dict = {}
+        for s in ships:
+            vars_dict[s["name"]] = pulp.LpVariable(
+                s["name"], lowBound=s["min_crew"], cat='Integer'
+            )
+
+        # 목적함수: 가중 진도율 최대화
+        prob += -pulp.lpSum([
+            s["priority"] * s["rate"] * vars_dict[s["name"]]
+            for s in ships
+        ])
+
+        # 부서별 인력 제약
+        if engine_ships:
+            prob += pulp.lpSum([vars_dict[s["name"]] for s in engine_ships]) <= engine_crew
+        if electric_ships:
+            prob += pulp.lpSum([vars_dict[s["name"]] for s in electric_ships]) <= electric_crew
+        if weapon_ships:
+            prob += pulp.lpSum([vars_dict[s["name"]] for s in weapon_ships]) <= weapon_crew
+
+        # 풀기
+        prob.solve(pulp.PULP_CBC_CMD(msg=0))
+
+        if pulp.LpStatus[prob.status] == "Optimal":
+            st.markdown("---")
+            st.markdown("#### 최적 배분 결과")
+
+            results = []
+            total_weighted = 0
+            for s in ships:
+                crew = int(pulp.value(vars_dict[s["name"]]))
+                days = 100 / (crew * s["rate"])
+                weighted = s["priority"] * s["rate"] * crew
+                total_weighted += weighted
+                results.append({
+                    "함정": s["name"],
+                    "담당부서": s["dept"],
+                    "우선순위": s["priority"],
+                    "배치인력(명)": crew,
+                    "완료예상(일)": f"{days:.1f}",
+                    "가중진도율": weighted
+                })
+
+            import pandas as pd
+            st.dataframe(pd.DataFrame(results), use_container_width=True)
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("총 가중 진도율", f"{total_weighted:.0f}")
+            with col2:
+                total_crew = sum([int(pulp.value(vars_dict[s["name"]])) for s in ships])
+                st.metric("총 투입 인력", f"{total_crew}명")
+            with col3:
+                st.metric("최적화 상태", pulp.LpStatus[prob.status])
+
+            # 부서별 인력 사용 현황
+            st.markdown("#### 부서별 인력 사용 현황")
+            dept_usage = []
+            for dept, capacity, dept_ships in [
+                ("기관부", engine_crew, engine_ships),
+                ("전자부", electric_crew, electric_ships),
+                ("무장부", weapon_crew, weapon_ships)
+            ]:
+                if dept_ships:
+                    used = sum([int(pulp.value(vars_dict[s["name"]])) for s in dept_ships])
+                    dept_usage.append({
+                        "부서": dept,
+                        "가용인력": capacity,
+                        "투입인력": used,
+                        "여유인력": capacity - used,
+                        "가동률": f"{used/capacity*100:.0f}%"
+                    })
+            st.dataframe(pd.DataFrame(dept_usage), use_container_width=True)
+
+        else:
+            st.error("최적해를 찾지 못했습니다. 인력 설정을 확인해주세요.")
 
 
 with tab8:
