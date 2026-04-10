@@ -5,17 +5,13 @@ import matplotlib.pyplot as plt
 import urllib.request
 import os
 
-# ── 한글 폰트 설정 (로컬: Malgun Gothic / 클라우드: NanumGothic) ──
+# ── 한글 폰트 설정 ────────────────────────────────────────
 def set_korean_font():
-    font_path = '/tmp/NanumGothic.ttf'
-    if not os.path.exists(font_path):
-        urllib.request.urlretrieve(
-            'https://cdn.jsdelivr.net/gh/googlefonts/nanum@main/fonts/NanumGothic/NanumGothic-Regular.ttf',
-            font_path
-        )
     from matplotlib import font_manager
-    font_manager.fontManager.addfont(font_path)
-    matplotlib.rcParams['font.family'] = 'NanumGothic'
+    font_path = os.path.join(os.path.dirname(__file__), 'NanumGothic.ttf')
+    if os.path.exists(font_path):
+        font_manager.fontManager.addfont(font_path)
+        matplotlib.rcParams['font.family'] = 'NanumGothic'
 
 set_korean_font()
 
