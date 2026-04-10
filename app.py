@@ -85,13 +85,16 @@ with col3:
 
 st.markdown("---")
 
-# ── 탭 3개 ───────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+# ── 탭 8개 ───────────────────────────────────────────────
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📊 공정 현황 (EVM)",
     "📦 재고 현황 (ROP)",
     "🤖 AI 브리핑",
     "⚙️ RAM 분석",
-    "🎲 Monte Carlo"
+    "🎲 Monte Carlo",
+    "📉 와이블 분석",
+    "👥 인력 최적화",
+    "🔮 예측 정비"
 ])
 with tab1:
     st.subheader("공정 현황 — EVM 분석")
@@ -302,3 +305,114 @@ with tab5:
             st.warning(f"⚠️ 목표 가용도 99% 달성 확률 {prob_99:.1f}% — MTTR 단축이 필요합니다.")
         else:
             st.error(f"🚨 목표 가용도 99% 달성 확률 {prob_99:.1f}% — 즉각적인 개선이 필요합니다.")
+with tab6:
+    st.subheader("📉 와이블 분석 — 예방정비 최적 시점 계산")
+    st.caption("장비 고장 이력 데이터를 입력하면 β/η를 추정하고 예방정비 시점을 자동 계산합니다.")
+
+    st.markdown("#### 와이블 파라미터 직접 입력")
+    st.caption("고장 데이터가 없는 경우 전문가 판단으로 직접 입력하세요.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        beta_input = st.number_input(
+            "β (형상 모수)",
+            min_value=0.1, max_value=10.0, value=2.5, step=0.1,
+            help="β<1: 초기불량기 / β=1: 안정기 / β>1: 마모기"
+        )
+        if beta_input < 1:
+            st.warning("초기불량기 — 납품 초기 집중 모니터링 필요")
+        elif beta_input == 1:
+            st.info("안정기 — MTBF 기반 정기 예방정비 적용")
+        else:
+            st.error("마모기 — 예방정비 주기 단축 필요")
+
+    with col2:
+        eta_input = st.number_input(
+            "η (특성 수명, 시간)",
+            min_value=100, max_value=100000, value=5000, step=100,
+            help="전체 장비의 63.2%가 고장나는 시점"
+        )
+        st.caption(f"= 약 {eta_input/24:.0f}일 = 약 {eta_input/24/30:.1f}개월")
+
+    target_r = st.slider(
+        "목표 신뢰도 (%)",
+        min_value=80, max_value=99, value=90, step=1
+    )
+
+    # 예방정비 시점 계산
+    import numpy as np
+    t_pm = eta_input * (-np.log(target_r/100))**(1/beta_input)
+
+    st.markdown("---")
+    st.markdown("#### 계산 결과")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(
+            label=f"예방정비 권고 시점",
+            value=f"{t_pm:.0f}시간",
+            delta=f"약 {t_pm/24:.0f}일"
+        )
+    with col2:
+        r_at_eta = np.exp(-1) * 100
+        st.metric(
+            label="η 시점 생존 확률",
+            value=f"{r_at_eta:.1f}%",
+            delta="β 무관 고정값"
+        )
+    with col3:
+        f_at_pm = (1 - target_r/100) * 100
+        st.metric(
+            label="정비 시점 고장 확률",
+            value=f"{f_at_pm:.1f}%",
+            delta=f"목표 신뢰도 {target_r}% 기준"
+        )
+
+    # 신뢰도 곡선 그래프
+    import matplotlib.pyplot as plt
+    import matplotlib
+    matplotlib.rcParams['font.family'] = 'Malgun Gothic'
+
+    t_range = np.linspace(1, eta_input * 2, 1000)
+    R = np.exp(-(t_range/eta_input)**beta_input)
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.plot(t_range, R*100, color='steelblue', linewidth=2, label='신뢰도 R(t)')
+    ax.axhline(target_r, color='red', linestyle='--',
+               label=f'목표 신뢰도 {target_r}%')
+    ax.axvline(t_pm, color='orange', linestyle='--',
+               label=f'예방정비 시점: {t_pm:.0f}h')
+    ax.axvline(eta_input, color='purple', linestyle=':',
+               label=f'η={eta_input}h (63.2% 고장)')
+    ax.set_title(f'신뢰도 함수 R(t) — β={beta_input}, η={eta_input}h')
+    ax.set_xlabel('운용 시간 (h)')
+    ax.set_ylabel('생존 확률 (%)')
+    ax.legend(fontsize=9)
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    st.pyplot(fig)
+
+    # MTTR 단축 시나리오
+    st.markdown("---")
+    st.markdown("#### 목표 신뢰도별 예방정비 시점 비교")
+    import pandas as pd
+    scenarios = []
+    for r in [99, 95, 90, 85, 80]:
+        t = eta_input * (-np.log(r/100))**(1/beta_input)
+        scenarios.append({
+            "목표 신뢰도": f"{r}%",
+            "예방정비 시점 (h)": f"{t:.0f}",
+            "예방정비 주기 (일)": f"{t/24:.0f}",
+            "예방정비 주기 (개월)": f"{t/24/30:.1f}"
+        })
+    st.dataframe(pd.DataFrame(scenarios), use_container_width=True)
+
+
+with tab7:
+    st.subheader("👥 인력 최적화 — 함정별 최적 인력 배분")
+    st.info("3단계 구현 예정 — 함정 정보 입력 후 최적 배분 자동 계산")
+
+
+with tab8:
+    st.subheader("🔮 예측 정비 — 센서 데이터 이상 탐지")
+    st.info("3단계 구현 예정 — 센서 데이터 입력 후 이상 탐지 및 고장 예측")
